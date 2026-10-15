@@ -1,30 +1,53 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:moviles_auth/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('sign in goes to profile and sign out comes back', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const App());
+    expect(find.text('Bienvenido de nuevo'), findsOneWidget);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.widgetWithText(FilledButton, 'Iniciar sesión'));
     await tester.pump();
+    expect(find.text('Escribe tu correo y tu contraseña'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(0), 'ana@icesi.edu.co');
+    await tester.enterText(find.byType(TextField).at(1), '123456');
+    await tester.tap(find.widgetWithText(FilledButton, 'Iniciar sesión'));
+    await tester.pumpAndSettle();
+    expect(find.text('Perfil'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Cerrar sesión'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bienvenido de nuevo'), findsOneWidget);
+  });
+
+  testWidgets('sign up rejects passwords that do not match', (tester) async {
+    await tester.pumpWidget(const App());
+    await tester.tap(find.text('¿No tienes cuenta? Regístrate'));
+    await tester.pumpAndSettle();
+    expect(find.text('Crea tu cuenta'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), 'ana');
+    await tester.enterText(find.byType(TextField).at(1), 'Ana Gómez');
+    await tester.enterText(find.byType(TextField).at(2), 'ana@icesi.edu.co');
+    await tester.enterText(find.byType(TextField).at(3), '123456');
+    await tester.enterText(find.byType(TextField).at(4), '654321');
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Registrarme'),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Registrarme'));
+    await tester.pump();
+    expect(find.text('Las contraseñas no coinciden'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(4), '123456');
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Registrarme'),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Registrarme'));
+    await tester.pumpAndSettle();
+    expect(find.text('Perfil'), findsOneWidget);
   });
 }
