@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:moviles_auth/features/auth/domain/entities/auth_user.dart';
@@ -7,13 +6,11 @@ import 'package:moviles_auth/features/auth/domain/entities/profile.dart';
 import 'package:moviles_auth/features/auth/domain/errors/auth_failure.dart';
 import 'package:moviles_auth/features/auth/domain/repository/auth_repository.dart';
 import 'package:moviles_auth/features/auth/domain/repository/profile_repository.dart';
-import 'package:moviles_auth/features/auth/domain/usecases/sign_up_usecase.dart';
-import 'package:moviles_auth/features/home/ui/screens/home_screen.dart';
-import 'package:moviles_auth/features/register/ui/bloc/register_bloc.dart';
-import 'package:moviles_auth/features/register/ui/screens/register_screen.dart';
 import 'package:moviles_auth/main.dart';
 
-/// Auth without Supabase: always creates the account with a fixed id.
+const _password = '123456';
+
+/// Auth without Supabase: one account with a fixed id and password.
 class FakeAuthRepository implements AuthRepository {
   bool signedOut = false;
 
@@ -23,119 +20,161 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<AuthUser> signIn({required String email, required String password}) async {
+    if (password != _password) {
+      throw const AuthFailure('Correo o contraseña incorrectos.');
+    }
+    return AuthUser(id: 'uid-123', email: email);
+  }
+
+  @override
   Future<void> signOut() async => signedOut = true;
 }
 
-/// Profiles without Supabase: saves in memory or fails on purpose.
+/// Profiles without Supabase: kept in memory, or failing on purpose.
 class FakeProfileRepository implements ProfileRepository {
   final bool fail;
-  Profile? saved;
+  final Map<String, Profile> rows = {};
 
   FakeProfileRepository({this.fail = false});
 
   @override
   Future<void> createProfile(Profile profile) async {
     if (fail) throw const AuthFailure('permission denied for table profiles');
-    saved = profile;
+    rows[profile.id] = profile;
+  }
+
+  @override
+  Future<Profile> getProfile(String id) async {
+    final row = rows[id];
+    if (fail || row == null) throw const AuthFailure('Esta cuenta no tiene perfil.');
+    return row;
   }
 }
 
-/// The register flow wired to the fakes instead of Supabase.
-Widget registerApp(AuthRepository auth, ProfileRepository profiles) {
-  return MaterialApp(
-    initialRoute: '/register',
-    routes: {
-      '/register': (_) => BlocProvider(
-        create: (_) => RegisterBloc(SignUpUseCase(auth, profiles)),
-        child: const RegisterScreen(),
-      ),
-      '/home': (context) {
-        final profile = ModalRoute.of(context)!.settings.arguments as Profile;
-        return HomeScreen(
-          username: profile.username,
-          fullName: profile.fullName,
-        );
-      },
-    },
-  );
-}
-
-Future<void> fillRegisterForm(WidgetTester tester, {String confirm = '123456'}) async {
-  await tester.enterText(find.byType(TextField).at(0), 'ana');
-  await tester.enterText(find.byType(TextField).at(1), 'Ana Gómez');
-  await tester.enterText(find.byType(TextField).at(2), 'ana@icesi.edu.co');
-  await tester.enterText(find.byType(TextField).at(3), '123456');
-  await tester.enterText(find.byType(TextField).at(4), confirm);
-}
-
-Future<void> tapRegister(WidgetTester tester) async {
-  final button = find.widgetWithText(FilledButton, 'Registrarme');
+Future<void> tapButton(WidgetTester tester, String label) async {
+  final button = find.widgetWithText(FilledButton, label);
   await tester.ensureVisible(button);
   await tester.tap(button);
   await tester.pumpAndSettle();
 }
 
+Future<void> goToRegister(WidgetTester tester) async {
+  await tester.tap(find.text('¿No tienes cuenta? Regístrate'));
+  await tester.pumpAndSettle();
+  expect(find.text('Crea tu cuenta'), findsOneWidget);
+}
+
+Future<void> fillRegisterForm(WidgetTester tester, {String confirm = _password}) async {
+  await tester.enterText(find.byType(TextField).at(0), 'ana');
+  await tester.enterText(find.byType(TextField).at(1), 'Ana Gómez');
+  await tester.enterText(find.byType(TextField).at(2), 'ana@icesi.edu.co');
+  await tester.enterText(find.byType(TextField).at(3), _password);
+  await tester.enterText(find.byType(TextField).at(4), confirm);
+}
+
 void main() {
-  testWidgets('sign in goes to profile and sign out comes back', (
-    tester,
-  ) async {
-    await tester.pumpWidget(const App());
-    expect(find.text('Bienvenido de nuevo'), findsOneWidget);
+  late FakeAuthRepository auth;
+  late FakeProfileRepository profiles;
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Iniciar sesión'));
-    await tester.pump();
-    expect(find.text('Escribe tu correo y tu contraseña'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField).at(0), 'ana@icesi.edu.co');
-    await tester.enterText(find.byType(TextField).at(1), '123456');
-    await tester.tap(find.widgetWithText(FilledButton, 'Iniciar sesión'));
-    await tester.pumpAndSettle();
-    expect(find.text('Perfil'), findsOneWidget);
-
-    await tester.tap(find.widgetWithText(FilledButton, 'Cerrar sesión'));
-    await tester.pumpAndSettle();
-    expect(find.text('Bienvenido de nuevo'), findsOneWidget);
+  setUp(() {
+    auth = FakeAuthRepository();
+    profiles = FakeProfileRepository();
   });
 
-  testWidgets('sign up rejects passwords that do not match', (tester) async {
-    final auth = FakeAuthRepository();
-    final profiles = FakeProfileRepository();
-    await tester.pumpWidget(registerApp(auth, profiles));
+  group('Login', () {
+    testWidgets('asks for both fields before calling the Bloc', (tester) async {
+      await tester.pumpWidget(App(auth: auth, profiles: profiles));
+      await tapButton(tester, 'Iniciar sesión');
+      expect(find.text('Escribe tu correo y tu contraseña'), findsOneWidget);
+    });
 
-    await fillRegisterForm(tester, confirm: '654321');
-    await tapRegister(tester);
-    expect(find.text('Las contraseñas no coinciden'), findsOneWidget);
-    expect(profiles.saved, isNull);
+    testWidgets('shows the error when the password is wrong', (tester) async {
+      profiles.rows['uid-123'] =
+          const Profile(id: 'uid-123', username: 'ana', fullName: 'Ana Gómez');
+      await tester.pumpWidget(App(auth: auth, profiles: profiles));
+
+      await tester.enterText(find.byType(TextField).at(0), 'ana@icesi.edu.co');
+      await tester.enterText(find.byType(TextField).at(1), 'otra');
+      await tapButton(tester, 'Iniciar sesión');
+
+      expect(find.text('Correo o contraseña incorrectos.'), findsOneWidget);
+      expect(find.text('Bienvenido de nuevo'), findsOneWidget);
+    });
+
+    testWidgets('opens the profile with the real email and signs out', (
+      tester,
+    ) async {
+      profiles.rows['uid-123'] =
+          const Profile(id: 'uid-123', username: 'ana', fullName: 'Ana Gómez');
+      await tester.pumpWidget(App(auth: auth, profiles: profiles));
+
+      await tester.enterText(find.byType(TextField).at(0), 'ana@icesi.edu.co');
+      await tester.enterText(find.byType(TextField).at(1), _password);
+      await tapButton(tester, 'Iniciar sesión');
+
+      expect(find.text('Perfil'), findsOneWidget);
+      expect(find.text('@ana'), findsOneWidget);
+      expect(find.text('ana@icesi.edu.co'), findsOneWidget);
+
+      await tapButton(tester, 'Cerrar sesión');
+      expect(auth.signedOut, isTrue);
+      expect(find.text('Bienvenido de nuevo'), findsOneWidget);
+    });
+
+    testWidgets('closes the session if the account has no profile', (
+      tester,
+    ) async {
+      await tester.pumpWidget(App(auth: auth, profiles: profiles));
+
+      await tester.enterText(find.byType(TextField).at(0), 'ana@icesi.edu.co');
+      await tester.enterText(find.byType(TextField).at(1), _password);
+      await tapButton(tester, 'Iniciar sesión');
+
+      expect(auth.signedOut, isTrue);
+      expect(find.textContaining('No se pudo cargar tu perfil'), findsOneWidget);
+    });
   });
 
-  testWidgets('sign up saves the profile with the Auth id and shows it', (
-    tester,
-  ) async {
-    final auth = FakeAuthRepository();
-    final profiles = FakeProfileRepository();
-    await tester.pumpWidget(registerApp(auth, profiles));
+  group('Register', () {
+    testWidgets('rejects passwords that do not match', (tester) async {
+      await tester.pumpWidget(App(auth: auth, profiles: profiles));
+      await goToRegister(tester);
 
-    await fillRegisterForm(tester);
-    await tapRegister(tester);
+      await fillRegisterForm(tester, confirm: '654321');
+      await tapButton(tester, 'Registrarme');
 
-    expect(profiles.saved?.id, 'uid-123');
-    expect(profiles.saved?.username, 'ana');
-    expect(find.text('Perfil'), findsOneWidget);
-    expect(find.text('@ana'), findsOneWidget);
-  });
+      expect(find.text('Las contraseñas no coinciden'), findsOneWidget);
+      expect(profiles.rows, isEmpty);
+    });
 
-  testWidgets('if the profile fails, the session is closed and an error shown', (
-    tester,
-  ) async {
-    final auth = FakeAuthRepository();
-    final profiles = FakeProfileRepository(fail: true);
-    await tester.pumpWidget(registerApp(auth, profiles));
+    testWidgets('saves the profile with the Auth id and shows it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(App(auth: auth, profiles: profiles));
+      await goToRegister(tester);
 
-    await fillRegisterForm(tester);
-    await tapRegister(tester);
+      await fillRegisterForm(tester);
+      await tapButton(tester, 'Registrarme');
 
-    expect(auth.signedOut, isTrue);
-    expect(find.textContaining('no se pudo guardar tu perfil'), findsOneWidget);
-    expect(find.text('Crea tu cuenta'), findsOneWidget);
+      expect(profiles.rows['uid-123']?.username, 'ana');
+      expect(find.text('Perfil'), findsOneWidget);
+      expect(find.text('@ana'), findsOneWidget);
+      expect(find.text('ana@icesi.edu.co'), findsOneWidget);
+    });
+
+    testWidgets('if the profile fails, closes the session and shows an error', (
+      tester,
+    ) async {
+      final failing = FakeProfileRepository(fail: true);
+      await tester.pumpWidget(App(auth: auth, profiles: failing));
+      await goToRegister(tester);
+
+      await fillRegisterForm(tester);
+      await tapButton(tester, 'Registrarme');
+
+      expect(auth.signedOut, isTrue);
+      expect(find.textContaining('no se pudo guardar tu perfil'), findsOneWidget);
+    });
   });
 }

@@ -10,6 +10,12 @@ abstract class AuthRepository {
     required String password,
   });
 
+  /// Opens a session for an existing account and returns its identity.
+  Future<AuthUser> signIn({
+    required String email,
+    required String password,
+  });
+
   /// Closes the current session.
   Future<void> signOut();
 }

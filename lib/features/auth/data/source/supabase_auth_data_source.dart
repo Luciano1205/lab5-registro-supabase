@@ -29,6 +29,25 @@ class SupabaseAuthDataSource {
     }
   }
 
+  Future<AuthUser> signIn({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final response = await _client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      final user = response.user;
+      if (user == null) {
+        throw const AuthFailure('No se pudo iniciar sesión.');
+      }
+      return AuthUser(id: user.id, email: user.email ?? email);
+    } on AuthException catch (e) {
+      throw AuthFailure(_messageFor(e));
+    }
+  }
+
   Future<void> signOut() async {
     try {
       await _client.auth.signOut();
@@ -46,6 +65,10 @@ class SupabaseAuthDataSource {
         return 'La contraseña es muy débil (mínimo 6 caracteres).';
       case 'email_address_invalid':
         return 'El correo no es válido.';
+      case 'invalid_credentials':
+        return 'Correo o contraseña incorrectos.';
+      case 'email_not_confirmed':
+        return 'Debes confirmar tu correo antes de iniciar sesión.';
       default:
         return e.message;
     }

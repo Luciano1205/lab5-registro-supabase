@@ -4,4 +4,7 @@ import 'package:moviles_auth/features/auth/domain/entities/profile.dart';
 abstract class ProfileRepository {
   /// Saves the profile of an account that already exists.
   Future<void> createProfile(Profile profile);
+
+  /// Reads the profile whose id is the account id.
+  Future<Profile> getProfile(String id);
 }

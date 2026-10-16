@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:moviles_auth/components/error_message.dart';
 import 'package:moviles_auth/components/primary_button.dart';
+import 'package:moviles_auth/features/home/ui/home_args.dart';
 import 'package:moviles_auth/features/register/ui/bloc/register_bloc.dart';
 import 'package:moviles_auth/features/register/ui/bloc/register_event.dart';
 import 'package:moviles_auth/features/register/ui/bloc/register_state.dart';
@@ -78,7 +79,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             Navigator.pushReplacementNamed(
               context,
               '/home',
-              arguments: state.profile,
+              arguments: HomeArgs(
+                profile: state.profile!,
+                email: _emailController.text.trim(),
+              ),
             );
           }
         },
